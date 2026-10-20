@@ -112,4 +112,4 @@ This is a **demo application** — no real payments are processed and data is no
 
 ---
 
-Made by [ParthSingh112](https://github.com/ParthSingh112) · Built in India 🇮🇳
+Made by [PARTH121-alt](https://github.com/PARTH121-alt) · Built in India 🇮🇳
