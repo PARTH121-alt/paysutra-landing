@@ -1,15 +1,10 @@
 import React, { useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { useStore, fmtDate } from '../store'
+import { useStore, fmtDate, canAccess, ROLE_COLORS as ROLE_COLORS_MAP } from '../store'
 import { I } from './icons'
 import { PageHead, Card, EmptyState } from './ui'
 
-const ROLE_COLORS = {
-  Admin: 'bg-indigo-100 text-indigo-700',
-  Finance: 'bg-emerald-100 text-emerald-700',
-  Operations: 'bg-amber-100 text-amber-700',
-  Viewer: 'bg-slate-100 text-slate-600',
-}
+const ROLE_COLORS = ROLE_COLORS_MAP
 
 export default function Team() {
   const { user, members, addMember, removeMember } = useStore()
@@ -17,8 +12,8 @@ export default function Team() {
   const [err, setErr] = useState('')
   const [done, setDone] = useState('')
 
-  // Organization dashboard only
-  if (user.type !== 'organization') return <Navigate to="/app" replace />
+  // Admin-only (organization accounts)
+  if (user.type !== 'organization' || !canAccess('team', user)) return <Navigate to="/app" replace />
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
   const submit = (e) => {

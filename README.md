@@ -55,7 +55,20 @@ npm run build
 npm run preview
 ```
 
-Sign up on `/login` with any email — the app seeds itself with ~2 weeks of demo transactions so the dashboard is immediately useful.
+Sign up on `/login` with any email — **new accounts start completely empty** (no demo data). Record your first payment to start seeing analytics.
+
+### 👥 Role-based access control (RBAC)
+
+Organization owners are **Admin**. Teammates invited on the Team page get a role, and can then **sign in with their invited email** — the dashboard adapts to their access level:
+
+| Role | Pages | Can write? |
+|---|---|---|
+| **Admin** (owner) | All pages + Team + Settings | ✅ Full |
+| **Finance** | Overview, Transactions, Payouts, Customers | ✅ Full |
+| **Operations** | Overview, Transactions, Payouts, Customers | ✅ Full |
+| **Viewer** | Overview, Transactions, Customers | ❌ Read-only |
+
+Route-level guards redirect unauthorized roles to the Overview, and write UI (buttons/mark actions) is hidden for read-only users.
 
 ---
 
@@ -108,7 +121,14 @@ src/
 
 ## ⚠️ Note
 
-This is a **demo application** — no real payments are processed and data is not synced to a server. It's ideal as a UI/UX prototype, a portfolio piece, or a starting point for wiring a real payments backend.
+This is a **demo application** — no real payments are processed. All data is stored **locally in your browser** (localStorage) and is not synced to a server. It's ideal as a UI/UX prototype, a portfolio piece, or a starting point for wiring a real payments backend.
+
+## 🚢 Deploy on Vercel
+
+```bash
+vercel login          # if needed
+vercel --prod         # deploys the app; SPA rewrites come from vercel.json
+```
 
 ---
 

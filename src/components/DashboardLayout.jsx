@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { useStore, inr } from '../store'
+import { useStore, inr, canAccess } from '../store'
 import { I } from './icons'
 
 export default function DashboardLayout({ children }) {
@@ -14,18 +14,20 @@ export default function DashboardLayout({ children }) {
 
   const isOrg = user.type === 'organization'
   const displayName = isOrg ? user.orgName : user.name
+  const role = isOrg ? user.role || 'Admin' : null
 
-  /* Separate navigation dashboards per account type */
+  /* Separate navigation dashboards per account type — filtered by RBAC */
   const base = '/app'
+  const orgLinks = [
+    { to: base, label: 'Overview', icon: I.home, page: 'overview', end: true },
+    { to: `${base}/transactions`, label: 'Transactions', icon: I.txn, page: 'transactions' },
+    { to: `${base}/payouts`, label: 'Payouts', icon: I.out, page: 'payouts' },
+    { to: `${base}/customers`, label: 'Customers', icon: I.users, page: 'customers' },
+    { to: `${base}/team`, label: 'Team', icon: I.gear, page: 'team' },
+    { to: `${base}/settings`, label: 'Settings', icon: I.settings, page: 'settings' },
+  ]
   const navLinks = isOrg
-    ? [
-        { to: base, label: 'Overview', icon: I.home, end: true },
-        { to: `${base}/transactions`, label: 'Transactions', icon: I.txn },
-        { to: `${base}/payouts`, label: 'Payouts', icon: I.out },
-        { to: `${base}/customers`, label: 'Customers', icon: I.users },
-        { to: `${base}/team`, label: 'Team', icon: I.gear }, // org-only
-        { to: `${base}/settings`, label: 'Settings', icon: I.settings },
-      ]
+    ? orgLinks.filter((l) => canAccess(l.page, user))
     : [
         { to: base, label: 'Overview', icon: I.home, end: true },
         { to: `${base}/transactions`, label: 'Payments', icon: I.txn },
@@ -67,7 +69,7 @@ export default function DashboardLayout({ children }) {
             isOrg ? 'bg-violet-500/20 text-violet-300' : 'bg-sky-500/20 text-sky-300'
           }`}>
             <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            {isOrg ? `Organization · ${user.role || 'Admin'}` : 'Personal'}
+            {isOrg ? `Organization · ${role}` : 'Personal'}
           </span>
         </div>
 

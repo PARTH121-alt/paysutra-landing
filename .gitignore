@@ -12,3 +12,4 @@ dist
 # editor/system
 .DS_Store
 *.swp
+.vercel

@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useStore, inr, fmtDate } from '../store'
+import { useStore, inr, fmtDate, canWrite } from '../store'
 import { I } from './icons'
 import { PageHead, Card, StatusBadge, EmptyState } from './ui'
 
 export default function Payouts() {
-  const { txns, addTxn, setStatus } = useStore()
+  const { user, txns, addTxn, setStatus } = useStore()
+  const writable = canWrite(user)
   const payouts = txns.filter((t) => t.type === 'out').sort((a, b) => b.date.localeCompare(a.date))
 
   const settled = payouts.filter((t) => t.status === 'completed').reduce((s, t) => s + t.amount, 0)
@@ -24,7 +25,10 @@ export default function Payouts() {
 
   return (
     <div>
-      <PageHead title="Payouts" subtitle="Schedule settlements, approve pending payouts and monitor outgoing money." />
+      <PageHead
+        title="Payouts"
+        subtitle={writable ? 'Schedule settlements, approve pending payouts and monitor outgoing money.' : 'Viewer access — read only.'}
+      />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Card>
@@ -41,6 +45,7 @@ export default function Payouts() {
         </Card>
       </div>
 
+      {writable && (
       <Card className="mb-6">
         <h2 className="mb-4 font-bold text-slate-900">Request a payout</h2>
         <form onSubmit={submit} className="grid gap-4 sm:grid-cols-4">
@@ -63,6 +68,7 @@ export default function Payouts() {
           </div>
         </form>
       </Card>
+      )}
 
       <Card className="overflow-hidden p-0">
         {payouts.length === 0 ? (
@@ -87,7 +93,7 @@ export default function Payouts() {
                     <td className="px-4 py-3 text-slate-500">{fmtDate(t.date)}</td>
                     <td className="max-w-40 truncate px-4 py-3 text-slate-500">{t.note || '—'}</td>
                     <td className="px-4 py-3">
-                      {t.status === 'pending' ? (
+                      {writable && t.status === 'pending' ? (
                         <div className="flex items-center gap-2">
                           <StatusBadge status={t.status} />
                           <button

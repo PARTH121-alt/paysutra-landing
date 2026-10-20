@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore, inr, fmtDate } from '../store'
 import { I } from './icons'
-import { PageHead, Card, StatusBadge } from './ui'
+import { PageHead, Card, StatusBadge, EmptyState } from './ui'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -113,7 +113,10 @@ export default function Overview() {
             <h2 className="font-bold text-slate-900">Recent activity</h2>
             <Link to="/app/transactions" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">View all</Link>
           </div>
-          <ul className="divide-y divide-slate-100">
+          {recent.length === 0 ? (
+            <EmptyState message="No payments yet — record your first one from the Transactions page." />
+          ) : (
+            <ul className="divide-y divide-slate-100">
             {recent.map((t) => (
               <li key={t.id} className="flex items-center justify-between gap-3 py-3">
                 <div className="min-w-0">
@@ -128,7 +131,8 @@ export default function Overview() {
                 </div>
               </li>
             ))}
-          </ul>
+            </ul>
+          )}
         </Card>
       </div>
     </div>

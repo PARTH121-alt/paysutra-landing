@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { useStore, canAccess } from '../store'
 import { PageHead, Card } from './ui'
 
 export default function Settings() {
-  const { user, updateProfile, resetDemo } = useStore()
+  const { user, updateProfile, clearAllData } = useStore()
   const [f, setF] = useState({ name: user.name, orgName: user.orgName || user.name })
   const [saved, setSaved] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
@@ -61,18 +61,18 @@ export default function Settings() {
           <Card>
             <h2 className="font-bold text-slate-900">Data</h2>
             <p className="mt-2 text-sm text-slate-600">
-              All your data lives in this browser via localStorage — nothing leaves your device.
+              All your transactions and team data live in this browser via localStorage — nothing leaves your device.
               Use <strong>Export CSV</strong> on the Transactions page to back it up.
             </p>
           </Card>
           <Card className="border-rose-200">
             <h2 className="font-bold text-rose-700">Danger zone</h2>
-            <p className="mt-2 text-sm text-slate-600">Replace your current data with the original sample dataset.</p>
+            <p className="mt-2 text-sm text-slate-600">Erase all transactions and team members for this browser. This cannot be undone.</p>
             <button
-              onClick={() => { if (window.confirm('Reset all data to demo dataset? This wipes your changes.')) resetDemo() }}
+              onClick={() => { if (window.confirm('Erase all data? This wipes every transaction and teammate, permanently.')) clearAllData() }}
               className="mt-4 rounded-lg border border-rose-300 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50"
             >
-              Reset to demo data
+              Erase all data
             </button>
           </Card>
         </div>

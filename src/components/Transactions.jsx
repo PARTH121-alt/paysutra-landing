@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore, inr, fmtDate } from '../store'
+import { useStore, inr, fmtDate, canWrite } from '../store'
 import { I } from './icons'
 import { PageHead, Card, StatusBadge, EmptyState } from './ui'
 
@@ -85,7 +85,8 @@ function AddForm({ onClose }) {
 }
 
 export default function Transactions() {
-  const { txns, setStatus, removeTxn } = useStore()
+  const { user, txns, setStatus, removeTxn } = useStore()
+  const writable = canWrite(user)
   const [showAdd, setShowAdd] = useState(false)
   const [q, setQ] = useState('')
   const [type, setType] = useState('all')
@@ -114,9 +115,18 @@ export default function Transactions() {
 
   return (
     <div>
-      <PageHead title="Transactions" subtitle="Record, search, track and export every payment." />
+      <PageHead
+        title="Transactions"
+        subtitle={writable ? 'Record, search, track and export every payment.' : 'Viewer access — read only.'}
+      >
+        {writable && (
+          <button onClick={() => setShowAdd((s) => !s)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500">
+            {I.plus('h-4 w-4')} New payment
+          </button>
+        )}
+      </PageHead>
 
-      {showAdd && <AddForm onClose={() => setShowAdd(false)} />}
+      {writable && showAdd && <AddForm onClose={() => setShowAdd(false)} />}
 
       <Card className="mb-6 flex flex-wrap items-center gap-3">
         <div className="relative min-w-56 flex-1">
@@ -142,9 +152,11 @@ export default function Transactions() {
         <button onClick={exportCsv} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
           {I.download('h-4 w-4')} Export CSV
         </button>
-        <button onClick={() => setShowAdd((s) => !s)} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500">
-          {I.plus('h-4 w-4')} New payment
-        </button>
+        {writable && (
+          <button onClick={() => setShowAdd((s) => !s)} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500">
+            {I.plus('h-4 w-4')} New payment
+          </button>
+        )}
       </Card>
 
       <Card className="overflow-hidden p-0">
@@ -179,7 +191,7 @@ export default function Transactions() {
                     <td className={`${tbl} uppercase text-slate-500`}>{t.method}</td>
                     <td className={`${tbl} max-w-40 truncate text-slate-500`}>{t.note || '—'}</td>
                     <td className={tbl}>
-                      {t.status === 'pending' ? (
+                      {writable && t.status === 'pending' ? (
                         <div className="flex items-center gap-1.5">
                           <StatusBadge status={t.status} />
                           <button onClick={() => setStatus(t.id, 'completed')} title="Mark completed" className="rounded-md bg-emerald-100 p-1 text-emerald-700 hover:bg-emerald-200">{I.check('h-3.5 w-3.5')}</button>
@@ -193,7 +205,9 @@ export default function Transactions() {
                       {t.type === 'in' ? '+' : '−'} {inr(t.amount)}
                     </td>
                     <td className={`${tbl} text-right`}>
-                      <button onClick={() => removeTxn(t.id)} title="Delete" className="rounded-md p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600">{I.x('h-4 w-4')}</button>
+                      {writable && (
+                        <button onClick={() => removeTxn(t.id)} title="Delete" className="rounded-md p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600">{I.x('h-4 w-4')}</button>
+                      )}
                     </td>
                   </tr>
                 ))}
