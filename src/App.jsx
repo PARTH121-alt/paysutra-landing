@@ -10,6 +10,8 @@ import Payouts from './components/Payouts'
 import Customers from './components/Customers'
 import Settings from './components/Settings'
 import Team from './components/Team'
+import Requests from './components/Requests'
+import QrVault from './components/QrVault'
 
 function RequireAuth({ children }) {
   const { user } = useStore()
@@ -43,6 +45,8 @@ export default function App() {
             <Route path="transactions" element={<Access page="transactions"><Transactions /></Access>} />
             <Route path="payouts" element={<Access page="payouts"><Payouts /></Access>} />
             <Route path="customers" element={<Access page="customers"><Customers /></Access>} />
+            <Route path="requests" element={<Access page="requests"><Requests /></Access>} />
+            <Route path="qr" element={<Access page="qr"><QrVault /></Access>} />
             <Route path="team" element={<Access page="team"><Team /></Access>} />
             <Route path="settings" element={<Access page="settings"><Settings /></Access>} />
           </Route>

@@ -21,8 +21,10 @@ export default function DashboardLayout({ children }) {
   const orgLinks = [
     { to: base, label: 'Overview', icon: I.home, page: 'overview', end: true },
     { to: `${base}/transactions`, label: 'Transactions', icon: I.txn, page: 'transactions' },
+    { to: `${base}/requests`, label: 'Request & Pay', icon: I.out, page: 'requests' },
     { to: `${base}/payouts`, label: 'Payouts', icon: I.out, page: 'payouts' },
     { to: `${base}/customers`, label: 'Customers', icon: I.users, page: 'customers' },
+    { to: `${base}/qr`, label: 'Company QR', icon: I.card, page: 'qr' },
     { to: `${base}/team`, label: 'Team', icon: I.gear, page: 'team' },
     { to: `${base}/settings`, label: 'Settings', icon: I.settings, page: 'settings' },
   ]
@@ -31,6 +33,8 @@ export default function DashboardLayout({ children }) {
     : [
         { to: base, label: 'Overview', icon: I.home, end: true },
         { to: `${base}/transactions`, label: 'Payments', icon: I.txn },
+        { to: `${base}/requests`, label: 'Request & Pay', icon: I.out },
+        { to: `${base}/qr`, label: 'My QR', icon: I.card },
         { to: `${base}/customers`, label: 'Contacts', icon: I.users },
         { to: `${base}/settings`, label: 'Settings', icon: I.settings },
       ]

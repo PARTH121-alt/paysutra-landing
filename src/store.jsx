@@ -6,6 +6,8 @@ const USER_KEY = 'paysutra:user'
 const ACCOUNTS_KEY = 'paysutra:accounts'
 const TXN_KEY = 'paysutra:transactions'
 const MEMBERS_KEY = 'paysutra:members'
+const QR_KEY = 'paysutra:qr'
+const REQ_KEY = 'paysutra:requests'
 
 const uid = () => Math.random().toString(36).slice(2, 10)
 
@@ -25,10 +27,13 @@ export const ROUTE_ROLES = {
   transactions: ['Admin', 'Finance', 'Operations', 'Viewer'],
   payouts: ['Admin', 'Finance', 'Operations'],
   customers: ['Admin', 'Finance', 'Operations', 'Viewer'],
+  requests: ['Admin', 'Finance', 'Operations', 'Viewer'],
+  qr: ['Admin', 'Finance', 'Operations', 'Viewer'],
   team: ['Admin'],
   settings: ['Admin'],
 }
 
+/* Who may generate/act on payment requests and manage the QR vault */
 const WRITE_ROLES = ['Admin', 'Finance', 'Operations']
 
 export const canAccess = (page, user) =>
@@ -55,6 +60,13 @@ export function StoreProvider({ children }) {
   const [members, setMembers] = useState(() => {
     try { return JSON.parse(localStorage.getItem(MEMBERS_KEY)) || [] } catch { return [] }
   })
+  /* uploaded / saved payment QR + sent payment requests */
+  const [qr, setQr] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(QR_KEY)) } catch { return null }
+  })
+  const [requests, setRequests] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(REQ_KEY)) || [] } catch { return [] }
+  })
 
   useEffect(() => {
     user ? localStorage.setItem(USER_KEY, JSON.stringify(user))
@@ -63,6 +75,33 @@ export function StoreProvider({ children }) {
   useEffect(() => { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts)) }, [accounts])
   useEffect(() => { localStorage.setItem(TXN_KEY, JSON.stringify(txns)) }, [txns])
   useEffect(() => { localStorage.setItem(MEMBERS_KEY, JSON.stringify(members)) }, [members])
+  useEffect(() => {
+    qr ? localStorage.setItem(QR_KEY, JSON.stringify(qr)) : localStorage.removeItem(QR_KEY)
+  }, [qr])
+  useEffect(() => { localStorage.setItem(REQ_KEY, JSON.stringify(requests)) }, [requests])
+
+  /* ---- LIVE sync: instantly reflect changes made in other tabs/devices
+     on the same browser profile (clients, owners, teammates). ---- */
+  useEffect(() => {
+    const onStorage = (e) => {
+      const reload = (key, setter) => {
+        if (e.key === key || e.key === null) {
+          try {
+            const v = e.key ? JSON.parse(e.newValue) : null
+            setter(key === QR_KEY && e.key === null ? null : v)
+          } catch { /* ignore malformed */ }
+        }
+      }
+      reload(USER_KEY, setUser)
+      reload(ACCOUNTS_KEY, setAccounts)
+      reload(TXN_KEY, setTxns)
+      reload(MEMBERS_KEY, setMembers)
+      reload(QR_KEY, setQr)
+      reload(REQ_KEY, setRequests)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   /* ---- auth ---- */
 
@@ -138,7 +177,51 @@ export function StoreProvider({ children }) {
   const clearAllData = () => {
     setTxns([])
     setMembers([])
+    setRequests([])
   }
+
+  /* ---- payment QR vault ---- */
+
+  const saveQr = ({ name, upiId, dataUrl }) => {
+    setQr({ name, upiId: (upiId || '').trim(), dataUrl: dataUrl || null })
+  }
+  const removeQr = () => setQr(null)
+
+  /* ---- payment requests (send & receive) ---- */
+
+  const addRequest = ({ direction, party, amount, note, upiId, name }) => {
+    const req = {
+      id: uid(),
+      direction, // 'in' = receiving from client, 'out' = paying someone
+      party,
+      amount: Number(amount),
+      note: note || '',
+      upiId, // UPI handle the money flows to/from
+      name,
+      status: 'pending',
+      createdAt: new Date().toISOString().slice(0, 10),
+      paidAt: null,
+    }
+    setRequests((prev) => [req, ...prev])
+    return req
+  }
+  const setRequestStatus = (id, status) => {
+    const req = requests.find((r) => r.id === id)
+    if (!req) return
+    setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)))
+    if (status === 'paid') {
+      // completed request becomes a real transaction on the books
+      addTxn({
+        type: req.direction === 'in' ? 'in' : 'out',
+        party: req.party,
+        amount: req.amount,
+        method: 'upi',
+        status: 'completed',
+        note: req.note || `UPI ${req.direction === 'in' ? 'collection' : 'payment'}`,
+      })
+    }
+  }
+  const removeRequest = (id) => setRequests((prev) => prev.filter((r) => r.id !== id))
 
   /* ---- org team members ---- */
 
@@ -163,10 +246,11 @@ export function StoreProvider({ children }) {
   return (
     <StoreContext.Provider
       value={{
-        accounts, user, txns, members,
+        accounts, user, txns, members, qr, requests,
         signUp, signIn, logout, updateProfile,
         addTxn, setStatus, removeTxn, clearAllData,
         addMember, removeMember,
+        saveQr, removeQr, addRequest, setRequestStatus, removeRequest,
       }}
     >
       {children}
