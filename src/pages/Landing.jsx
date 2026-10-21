@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { useStore } from '../store'
+import { useStore, inr } from '../store'
 import { I } from '../components/icons'
 
 const Icon = ({ d, className = 'h-6 w-6' }) => (
@@ -351,7 +351,7 @@ function Footer() {
     { title: 'Product', links: ['Payments', 'Payouts', 'Checkout', 'Reconciliation'] },
     { title: 'Company', links: ['About', 'Careers', 'Blog', 'Press'] },
     { title: 'Resources', links: ['Docs', 'API Reference', 'Status', 'Help Centre'] },
-    { title: 'Legal', links: ['Privacy', 'Terms', 'Compliance', 'Security'] },
+    { title: 'Legal', links: [{ label: 'Privacy', to: '/privacy' }, 'Terms', 'Compliance', 'Security'] },
   ]
   return (
     <footer className="border-t border-white/10 bg-slate-950 py-14">
@@ -368,9 +368,19 @@ function Footer() {
             <div key={c.title}>
               <h4 className="text-sm font-bold text-white">{c.title}</h4>
               <ul className="mt-4 space-y-2">
-                {c.links.map((l) => (
-                  <li key={l}><a href="#" className="text-sm text-slate-500 transition hover:text-white">{l}</a></li>
-                ))}
+                {c.links.map((l) => {
+                  const label = typeof l === 'string' ? l : l.label
+                  const to = typeof l === 'string' ? '#' : l.to
+                  return (
+                    <li key={label}>
+                      {to === '#' ? (
+                        <a href="#" className="text-sm text-slate-500 transition hover:text-white">{label}</a>
+                      ) : (
+                        <Link to={to} className="text-sm text-slate-500 transition hover:text-white">{label}</Link>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             </div>
           ))}

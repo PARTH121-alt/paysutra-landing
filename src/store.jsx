@@ -1,13 +1,22 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 
-/* ------------ localStorage-backed store: auth + transactions ------------- */
+/* ------------ localStorage-backed store: auth + per-user data ------------- */
 
 const USER_KEY = 'paysutra:user'
 const ACCOUNTS_KEY = 'paysutra:accounts'
-const TXN_KEY = 'paysutra:transactions'
-const MEMBERS_KEY = 'paysutra:members'
-const QR_KEY = 'paysutra:qr'
-const REQ_KEY = 'paysutra:requests'
+const MEMBERS_KEY = 'paysutra:members' // invitation registry (shared, global)
+
+/* ---- USER-BASED DATA: every account owns a private data namespace ---- */
+const txnKeyOf = (e) => `paysutra:txns:${e}`
+const reqKeyOf = (e) => `paysutra:reqs:${e}`
+const qrKeyOf = (e) => `paysutra:qr:${e}`
+
+const load = (key, fallback) => {
+  try {
+    const v = JSON.parse(localStorage.getItem(key))
+    return v === null || v === undefined ? fallback : v
+  } catch { return fallback }
+}
 
 const uid = () => Math.random().toString(36).slice(2, 10)
 
@@ -20,8 +29,6 @@ export const ROLE_COLORS = {
   Viewer: 'bg-slate-100 text-slate-600',
 }
 
-/* Which dashboard pages each role may access.
-   Account owners are always Admin. Invited teammates inherit their invite role. */
 export const ROUTE_ROLES = {
   overview: ['Admin', 'Finance', 'Operations', 'Viewer'],
   transactions: ['Admin', 'Finance', 'Operations', 'Viewer'],
@@ -33,7 +40,6 @@ export const ROUTE_ROLES = {
   settings: ['Admin'],
 }
 
-/* Who may generate/act on payment requests and manage the QR vault */
 const WRITE_ROLES = ['Admin', 'Finance', 'Operations']
 
 export const canAccess = (page, user) =>
@@ -47,66 +53,73 @@ export const canWrite = (user) =>
 const StoreContext = createContext(null)
 
 export function StoreProvider({ children }) {
-  const [accounts, setAccounts] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY)) || [] } catch { return [] }
-  })
-  const [user, setUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(USER_KEY)) } catch { return null }
-  })
-  /* user-based data: no demo seed — every account starts clean */
-  const [txns, setTxns] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(TXN_KEY)) || [] } catch { return [] }
-  })
-  const [members, setMembers] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(MEMBERS_KEY)) || [] } catch { return [] }
-  })
-  /* uploaded / saved payment QR + sent payment requests */
-  const [qr, setQr] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(QR_KEY)) } catch { return null }
-  })
-  const [requests, setRequests] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(REQ_KEY)) || [] } catch { return [] }
-  })
+  /* Account registry stays global so any email can sign in on any tab */
+  const [accounts, setAccounts] = useState(() => load(ACCOUNTS_KEY, []))
+  const [user, setUser] = useState(() => load(USER_KEY, null))
+  const email = user?.email || null
 
+  /* Private, per-user data pools */
+  const [txns, setTxns] = useState(() => (email ? load(txnKeyOf(email), []) : []))
+  const [requests, setRequests] = useState(() => (email ? load(reqKeyOf(email), []) : []))
+  const [qr, setQr] = useState(() => (email ? load(qrKeyOf(email), null) : null))
+  const [members, setMembers] = useState(() => load(MEMBERS_KEY, []))
+
+  /* load the active account's private pool when the account changes */
+  useEffect(() => {
+    if (!email) return
+    setTxns(load(txnKeyOf(email), []))
+    setRequests(load(reqKeyOf(email), []))
+    setQr(load(qrKeyOf(email), null))
+  }, [email])
+
+  /* global singletons persist through effects */
   useEffect(() => {
     user ? localStorage.setItem(USER_KEY, JSON.stringify(user))
          : localStorage.removeItem(USER_KEY)
   }, [user])
   useEffect(() => { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts)) }, [accounts])
-  useEffect(() => { localStorage.setItem(TXN_KEY, JSON.stringify(txns)) }, [txns])
   useEffect(() => { localStorage.setItem(MEMBERS_KEY, JSON.stringify(members)) }, [members])
-  useEffect(() => {
-    qr ? localStorage.setItem(QR_KEY, JSON.stringify(qr)) : localStorage.removeItem(QR_KEY)
-  }, [qr])
-  useEffect(() => { localStorage.setItem(REQ_KEY, JSON.stringify(requests)) }, [requests])
 
-  /* ---- LIVE sync: instantly reflect changes made in other tabs/devices
-     on the same browser profile (clients, owners, teammates). ---- */
+  /* ---- LIVE sync across tabs: instant per-account updates ---- */
   useEffect(() => {
     const onStorage = (e) => {
-      const reload = (key, setter) => {
-        if (e.key === key || e.key === null) {
-          try {
-            const v = e.key ? JSON.parse(e.newValue) : null
-            setter(key === QR_KEY && e.key === null ? null : v)
-          } catch { /* ignore malformed */ }
-        }
-      }
-      reload(USER_KEY, setUser)
-      reload(ACCOUNTS_KEY, setAccounts)
-      reload(TXN_KEY, setTxns)
-      reload(MEMBERS_KEY, setMembers)
-      reload(QR_KEY, setQr)
-      reload(REQ_KEY, setRequests)
+      if (e.key === USER_KEY) { setUser(load(USER_KEY, null)); return }
+      if (e.key === ACCOUNTS_KEY) { setAccounts(load(ACCOUNTS_KEY, [])); return }
+      if (e.key === MEMBERS_KEY) { setMembers(load(MEMBERS_KEY, [])); return }
+      const cur = load(USER_KEY, null)
+      if (!cur) return
+      if (e.key === txnKeyOf(cur.email)) setTxns(load(txnKeyOf(cur.email), []))
+      else if (e.key === reqKeyOf(cur.email)) setRequests(load(reqKeyOf(cur.email), []))
+      else if (e.key === qrKeyOf(cur.email)) setQr(load(qrKeyOf(cur.email), null))
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
+  /* write-through mutation helpers — data only persists via explicit actions,
+     so account switches can never leak one user's data into another's pool */
+  const [emailRef] = useState({ current: null })
+  emailRef.current = email
+
+  const updateTxns = (fn) => {
+    setTxns((prev) => {
+      const next = fn(prev)
+      if (emailRef.current) localStorage.setItem(txnKeyOf(emailRef.current), JSON.stringify(next))
+      return next
+    })
+  }
+  const updateRequests = (fn) => {
+    setRequests((prev) => {
+      const next = fn(prev)
+      if (emailRef.current) localStorage.setItem(reqKeyOf(emailRef.current), JSON.stringify(next))
+      return next
+    })
+  }
+
   /* ---- auth ---- */
 
-  const signUp = ({ email, name, type, orgName = '', provider = 'email' }) => {
-    const normalized = String(email || '').trim().toLowerCase()
+  const signUp = ({ email: mail, name, type, orgName = '', provider = 'email' }) => {
+    const normalized = String(mail || '').trim().toLowerCase()
     if (!normalized) return { ok: false, error: 'Please enter an email.' }
     if (accounts.some((a) => a.email === normalized)) {
       return { ok: false, error: 'An account with this email already exists. Try signing in instead.' }
@@ -117,7 +130,7 @@ export function StoreProvider({ children }) {
       name: (name || '').trim() || normalized.split('@')[0],
       type: isOrg ? 'organization' : 'personal',
       orgName: isOrg ? ((orgName || '').trim() || normalized.split('@')[0] + "'s Org") : name,
-      role: 'Admin', // account owner = full access
+      role: 'Admin',
       provider,
       joined: new Date().toISOString().slice(0, 10),
     }
@@ -126,19 +139,15 @@ export function StoreProvider({ children }) {
     return { ok: true }
   }
 
-  /* Sign in works for BOTH account owners and invited teammates:
-     - owner email  -> full role from their account
-     - teammate email -> role granted when invited to the org */
-  const signIn = ({ email }) => {
-    const normalized = String(email || '').trim().toLowerCase()
+  /* Owners sign in with their account; invited teammates sign in with the
+     email they were invited with and inherit their role. */
+  const signIn = ({ email: mail }) => {
+    const normalized = String(mail || '').trim().toLowerCase()
     const acct = accounts.find((a) => a.email === normalized)
-    if (acct) {
-      setUser(acct)
-      return { ok: true }
-    }
+    if (acct) { setUser(acct); return { ok: true } }
     const member = members.find((m) => m.email.toLowerCase() === normalized)
     if (member?.orgName) {
-      const memberUser = {
+      setUser({
         email: member.email,
         name: member.name,
         type: 'organization',
@@ -146,8 +155,7 @@ export function StoreProvider({ children }) {
         role: member.role,
         provider: 'invite',
         joined: member.addedOn,
-      }
-      setUser(memberUser)
+      })
       return { ok: true }
     }
     return { ok: false, error: 'No account or invitation found for this email. Create an account below.' }
@@ -163,54 +171,64 @@ export function StoreProvider({ children }) {
     })
   }
 
-  /* ---- transactions ---- */
+  /* ---- transactions (private to the signed-in account) ---- */
 
   const addTxn = (t) => {
     if (!canWrite(user)) return { ok: false, error: 'forbidden' }
     const txn = { id: uid(), date: t.date || new Date().toISOString().slice(0, 10), ...t }
-    setTxns((prev) => [txn, ...prev])
+    updateTxns((prev) => [txn, ...prev])
     return txn
   }
-  const setStatus = (id, status) => setTxns((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)))
-  const removeTxn = (id) => setTxns((prev) => prev.filter((t) => t.id !== id))
+  const setStatus = (id, status) =>
+    updateTxns((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)))
+  const removeTxn = (id) => updateTxns((prev) => prev.filter((t) => t.id !== id))
 
   const clearAllData = () => {
-    setTxns([])
-    setMembers([])
-    setRequests([])
+    if (!emailRef.current) return
+    const e = emailRef.current
+    setTxns([]); setRequests([]); setQr(null)
+    localStorage.removeItem(txnKeyOf(e))
+    localStorage.removeItem(reqKeyOf(e))
+    localStorage.removeItem(qrKeyOf(e))
+    if (user.type === 'organization') setMembers((prev) => prev.filter((m) => m.orgName !== user.orgName))
   }
 
-  /* ---- payment QR vault ---- */
+  /* ---- payment QR vault (private per account) ---- */
 
   const saveQr = ({ name, upiId, dataUrl }) => {
-    setQr({ name, upiId: (upiId || '').trim(), dataUrl: dataUrl || null })
+    const next = { name, upiId: (upiId || '').trim(), dataUrl: dataUrl || null }
+    setQr(next)
+    if (emailRef.current) localStorage.setItem(qrKeyOf(emailRef.current), JSON.stringify(next))
   }
-  const removeQr = () => setQr(null)
+  const removeQr = () => {
+    setQr(null)
+    if (emailRef.current) localStorage.removeItem(qrKeyOf(emailRef.current))
+  }
 
-  /* ---- payment requests (send & receive) ---- */
+  /* ---- payment requests (private per account) ---- */
 
   const addRequest = ({ direction, party, amount, note, upiId, name }) => {
+    if (!canWrite(user)) return { ok: false, error: 'forbidden' }
     const req = {
       id: uid(),
-      direction, // 'in' = receiving from client, 'out' = paying someone
+      direction, // 'in' = from client, 'out' = to a payee
       party,
       amount: Number(amount),
       note: note || '',
-      upiId, // UPI handle the money flows to/from
+      upiId,
       name,
       status: 'pending',
       createdAt: new Date().toISOString().slice(0, 10),
       paidAt: null,
     }
-    setRequests((prev) => [req, ...prev])
+    updateRequests((prev) => [req, ...prev])
     return req
   }
   const setRequestStatus = (id, status) => {
     const req = requests.find((r) => r.id === id)
     if (!req) return
-    setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)))
+    updateRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)))
     if (status === 'paid') {
-      // completed request becomes a real transaction on the books
       addTxn({
         type: req.direction === 'in' ? 'in' : 'out',
         party: req.party,
@@ -221,27 +239,46 @@ export function StoreProvider({ children }) {
       })
     }
   }
-  const removeRequest = (id) => setRequests((prev) => prev.filter((r) => r.id !== id))
+  const removeRequest = (id) => updateRequests((prev) => prev.filter((r) => r.id !== id))
 
-  /* ---- org team members ---- */
+  /* ---- org team members (global invitation registry) ---- */
 
-  const addMember = ({ name, email, role = 'Operations' }) => {
-    if (!email || !email.includes('@')) return { ok: false, error: 'Enter a valid email.' }
-    if (members.some((m) => m.email.toLowerCase() === email.toLowerCase())) {
+  const addMember = ({ name, email: mail, role = 'Operations' }) => {
+    if (!mail || !mail.includes('@')) return { ok: false, error: 'Enter a valid email.' }
+    if (members.some((m) => m.email.toLowerCase() === mail.toLowerCase())) {
       return { ok: false, error: 'This teammate is already added.' }
     }
     const member = {
       id: uid(),
-      name: (name || '').trim() || email.split('@')[0],
-      email: email.trim(),
+      name: (name || '').trim() || mail.split('@')[0],
+      email: mail.trim(),
       role,
-      orgName: user.orgName, // ties the invite to this org, enabling member sign-in
+      orgName: user.orgName,
       addedOn: new Date().toISOString().slice(0, 10),
     }
     setMembers((prev) => [member, ...prev])
     return { ok: true }
   }
   const removeMember = (id) => setMembers((prev) => prev.filter((m) => m.id !== id))
+
+  /* ---- one-time migration of the old shared data pool ---- */
+  useEffect(() => {
+    if (!user) return
+    const e = user.email
+    const migrate = (oldKey, newKey) => {
+      if (localStorage.getItem(oldKey) !== null) {
+        if (localStorage.getItem(newKey) === null) localStorage.setItem(newKey, localStorage.getItem(oldKey))
+        localStorage.removeItem(oldKey)
+      }
+    }
+    migrate('paysutra:transactions', txnKeyOf(e))
+    migrate('paysutra:requests', reqKeyOf(e))
+    migrate('paysutra:qr', qrKeyOf(e))
+    setTxns(load(txnKeyOf(e), []))
+    setRequests(load(reqKeyOf(e), []))
+    setQr(load(qrKeyOf(e), null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <StoreContext.Provider

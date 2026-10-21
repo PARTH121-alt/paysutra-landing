@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { StoreProvider, useStore, canAccess } from './store'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
+import Privacy from './pages/Privacy'
 import DashboardLayout from './components/DashboardLayout'
 import Overview from './components/Overview'
 import Transactions from './components/Transactions'
@@ -33,6 +34,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/privacy" element={<Privacy />} />
           <Route
             path="/app"
             element={

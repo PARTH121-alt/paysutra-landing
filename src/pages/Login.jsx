@@ -230,6 +230,10 @@ export default function Login() {
             </p>
           </>
         )}
+        <p className="mt-5 text-center text-[11px] text-slate-500">
+          By continuing you agree to our <Link to="/privacy" className="underline hover:text-slate-300">Privacy Policy</Link> —
+          all data stays locally in this browser.
+        </p>
       </div>
     </div>
   )
