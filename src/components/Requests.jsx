@@ -2,6 +2,7 @@ import { useState } from 'react'
 import QRCode from 'qrcode'
 import { Link } from 'react-router-dom'
 import { useStore, inr, fmtDate, canWrite } from '../store'
+import { isGateway, loadRazorpay } from '../lib/supabase'
 import { I } from './icons'
 import { PageHead, Card, StatusBadge, EmptyState } from './ui'
 
@@ -12,7 +13,7 @@ const makeUpiLink = ({ pa, pn, am, tn }) =>
   `&cu=INR${tn ? `&tn=${encodeURIComponent(tn)}` : ''}`
 
 export default function Requests() {
-  const { user, qr, requests, addRequest, setRequestStatus, removeRequest } = useStore()
+  const { user, qr, requests, addRequest, setRequestStatus, removeRequest, attachRazorpayLink } = useStore()
   const writable = canWrite(user)
   const isOrg = user.type === 'organization'
   const displayName = isOrg ? user.orgName : user.name
@@ -21,6 +22,62 @@ export default function Requests() {
   const [form, setForm] = useState({ party: '', amount: '', note: '' })
   const [active, setActive] = useState(null) // { req, link, qrUrl }
   const [err, setErr] = useState('')
+  const [msg, setMsg] = useState('')
+  const [linkBusy, setLinkBusy] = useState(false)
+
+  /* ---- Razorpay: real payment link you send to clients ---- */
+  const sendRazorpayLink = async (req) => {
+    setErr(''); setMsg(''); setLinkBusy(true)
+    try {
+      const resp = await fetch('/api/create-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: req.amount, name: req.name, note: req.note, referenceId: req.id, upiId: req.upiId }),
+      })
+      const data = await resp.json()
+      if (!resp.ok) return setErr(data.error || 'Could not create payment link')
+      await attachRazorpayLink(req.id, data.id, data.shortUrl)
+      try { await navigator.clipboard.writeText(data.shortUrl); setMsg('✓ Razorpay payment link created & copied — send it to your client!') }
+      catch { setMsg('✓ Payment link created: ' + data.shortUrl) }
+    } finally { setLinkBusy(false) }
+  }
+
+  /* ---- Razorpay: real in-app checkout for paying vendors ---- */
+  const payWithRazorpay = async (req) => {
+    setErr(''); setMsg('')
+    const ok = await loadRazorpay()
+    if (!ok) return setErr('Could not load Razorpay checkout.')
+    const resp = await fetch('/api/create-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: req.amount, receipt: req.id, notes: { request_id: req.id, payee: req.party } }),
+    })
+    const data = await resp.json()
+    if (!resp.ok) return setErr(data.error || 'Could not start payment')
+    new window.Razorpay({
+      key: data.keyId,
+      amount: data.amount,
+      currency: 'INR',
+      name: 'PaySutra',
+      description: req.note || `Payment to ${req.party}`,
+      order_id: data.orderId,
+      prefill: { name: displayName, email: user.email },
+      theme: { color: '#6366f1' },
+      handler: async (r) => {
+        const v = await fetch('/api/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: r.razorpay_order_id, paymentId: r.razorpay_payment_id, signature: r.razorpay_signature }),
+        })
+        const vd = await v.json()
+        if (vd.valid) {
+          await setRequestStatus(req.id, 'paid')
+          setActive(null)
+          setMsg('✓ Payment verified — recorded on your books.')
+        } else setErr('Payment verification failed.')
+      },
+    }).open()
+  }
 
   const generate = async (req) => {
     const link = makeUpiLink({
@@ -38,7 +95,7 @@ export default function Requests() {
     setErr('')
     if (!qr?.upiId) return setErr('Add your UPI ID first — open My QR (or Company QR) page. Clients pay into that account.')
     if (!form.party || !(form.amount > 0)) return setErr('Enter the client name and a valid amount.')
-    const req = addRequest({
+    const req = await addRequest({
       direction: 'in',
       party: form.party,
       amount: form.amount,
@@ -55,7 +112,7 @@ export default function Requests() {
     setErr('')
     if (!(form.party.includes('@'))) return setErr("Enter the recipient's UPI ID (e.g. vendor@okhdfc).")
     if (!(form.amount > 0)) return setErr('Enter a valid amount.')
-    const req = addRequest({
+    const req = await addRequest({
       direction: 'out',
       party: form.party, // recipient's UPI ID
       amount: form.amount,
@@ -150,9 +207,27 @@ export default function Requests() {
                   <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Invoice #42" className={input} /></div>
               </div>
               <p className="text-xs text-slate-400">Funds go to your UPI: <strong>{qr?.upiId || 'not set yet'}</strong></p>
-              <button type="submit" className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500">
-                Generate payment QR & link
-              </button>
+              <div className="flex gap-2">
+                <button type="submit" className="flex-1 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500">
+                  Generate payment QR & link
+                </button>
+              </div>
+              {isGateway && (
+                <button
+                  type="button"
+                  disabled={linkBusy}
+                  onClick={async (e) => {
+                    e.preventDefault()
+                    if (!form.party || !(form.amount > 0)) return setErr('Enter the client name and a valid amount.')
+                    const req = await addRequest({ direction: 'in', party: form.party, amount: form.amount, note: form.note, upiId: qr?.upiId, name: displayName })
+                    setForm({ party: '', amount: '', note: '' })
+                    await sendRazorpayLink(req)
+                  }}
+                  className="w-full rounded-lg border-2 border-indigo-500 px-4 py-2.5 text-sm font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-60"
+                >
+                  {linkBusy ? 'Creating link…' : '⚡ Send Razorpay payment link (accepts UPI/cards)'}
+                </button>
+              )}
             </form>
           </Card>
 
@@ -174,6 +249,21 @@ export default function Requests() {
               <button type="submit" className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700">
                 Prepare UPI payment
               </button>
+              {isGateway && (
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.preventDefault()
+                    if (!(form.party.includes('@')) || !(form.amount > 0)) return setErr("Enter the recipient's UPI ID and a valid amount.")
+                    const req = await addRequest({ direction: 'out', party: form.party, amount: form.amount, note: form.note, upiId: form.party, name: displayName })
+                    setForm({ party: '', amount: '', note: '' })
+                    await payWithRazorpay(req)
+                  }}
+                  className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500"
+                >
+                  ⚡ Pay now with Razorpay (UPI/cards/netbanking)
+                </button>
+              )}
             </form>
           </Card>
         </div>
@@ -183,6 +273,7 @@ export default function Requests() {
 
       {/* Requests list */}
       {err && <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">{err}</p>}
+      {msg && <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{msg}</p>}
       <Card className="overflow-hidden p-0">
         <div className="flex items-center justify-between px-6 py-4">
           <h2 className="font-bold text-slate-900">Payment requests ({sorted.length})</h2>
@@ -208,9 +299,17 @@ export default function Requests() {
                   </p>
                 </div>
                 <StatusBadge status={r.status === 'paid' ? 'completed' : r.status} />
+                {r.razorpayUrl && (
+                  <a href={r.razorpayUrl} target="_blank" rel="noreferrer" className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-500">
+                    Pay link ⚡
+                  </a>
+                )}
                 {writable && r.status === 'pending' && (
                   <>
                     <button onClick={() => generate(r)} title="Show QR & link again" className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50">⧉</button>
+                    {isGateway && r.direction === 'out' && (
+                      <button onClick={() => payWithRazorpay(r)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-500">Pay now</button>
+                    )}
                     <button onClick={() => setRequestStatus(r.id, 'paid')} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-500">Mark received</button>
                     <button onClick={() => setRequestStatus(r.id, 'cancelled')} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
                   </>

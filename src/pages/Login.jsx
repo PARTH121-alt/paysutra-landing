@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
-
-/* Real Google Sign-In is enabled when VITE_GOOGLE_CLIENT_ID is set.
-   Without it, a demo account-chooser keeps the flow functional. */
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
+import { isCloud, isGateway } from '../lib/supabase'
+/* Google sign-up. Cloud mode → real Supabase OAuth (redirect flow).
+   Local mode → demo account-chooser keeps the flow functional. */
 
 function GoogleLogo({ className = 'h-5 w-5' }) {
   return (
@@ -61,69 +60,44 @@ function GoogleModal({ onPick, onClose }) {
 }
 
 export default function Login() {
-  const { signIn, signUp } = useStore()
+  const { signIn, signUp, googleSignUp } = useStore()
   const navigate = useNavigate()
 
   const [tab, setTab] = useState('signin')            // 'signin' | 'signup'
   const [type, setType] = useState('organization')    // signup account type
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [orgName, setOrgName] = useState('')
   const [err, setErr] = useState('')
   const [googleOpen, setGoogleOpen] = useState(false)
-
-  /* If a real Google Client ID exists, load Google Identity Services.
-     Google sign-up always creates a PERSONAL account (per requirement). */
-  useEffect(() => {
-    if (!CLIENT_ID || tab !== 'signup') return
-    const s = document.createElement('script')
-    s.src = 'https://accounts.google.com/gsi/client'
-    s.async = true
-    s.onload = () => {
-      if (!window.google?.accounts?.id) return
-      window.google.accounts.id.initialize({
-        client_id: CLIENT_ID,
-        callback: (res) => {
-          try {
-            const payload = JSON.parse(
-              atob(res.credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')),
-            )
-            const out = signUp({
-              email: payload.email,
-              name: payload.given_name || payload.email.split('@')[0],
-              type: 'personal',
-              provider: 'google',
-            })
-            if (out.ok) navigate('/app')
-            else setErr(out.error)
-          } catch { setErr('Could not read Google profile. Try again.') }
-        },
-      })
-      window.google.accounts.id.renderButton(document.getElementById('gsi-button'), {
-        theme: 'outline', size: 'large', text: 'signup_with', shape: 'pill',
-      })
-    }
-    document.head.appendChild(s)
-    return () => { document.head.removeChild(s) }
-  }, [CLIENT_ID, tab, signUp, navigate])
+  const [busy, setBusy] = useState(false)
 
   const swap = (t) => { setTab(t); setErr('') }
 
-  const submit = (e) => {
+
+  const submit = async (e) => {
     e.preventDefault()
-    setErr('')
+    setErr(''); setBusy(true)
     const out = tab === 'signin'
-      ? signIn({ email })
-      : signUp({ email, name, type, orgName })
+      ? await signIn({ email, password })
+      : await signUp({ email, password, name, type, orgName })
+    setBusy(false)
+    if (out.ok) navigate('/app')
+    else if (out.error !== 'google-demo') setErr(out.error)
+  }
+
+  const googleDemoPick = async (gEmail) => {
+    setGoogleOpen(false)
+    const out = await signUp({ email: gEmail, name: gEmail.split('@')[0], type: 'personal', provider: 'google' })
     if (out.ok) navigate('/app')
     else setErr(out.error)
   }
 
-  const googleDemoPick = (gEmail) => {
-    setGoogleOpen(false)
-    const out = signUp({ email: gEmail, name: gEmail.split('@')[0], type: 'personal', provider: 'google' })
-    if (out.ok) navigate('/app')
-    else setErr(out.error)
+  const onGoogle = async () => {
+    setErr('')
+    const out = await googleSignUp()
+    if (!out.ok && out.error === 'google-demo') setGoogleOpen(true)
   }
 
   const showGoogle = tab === 'signup' && type === 'personal'
@@ -187,6 +161,13 @@ export default function Login() {
             <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className={input} />
           </div>
 
+          {isCloud && (
+            <div>
+              <label className={label}>Password {tab === 'signup' && '(min 6 characters)'}</label>
+              <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className={input} />
+            </div>
+          )}
+
           {tab === 'signup' && (
             <div>
               <label className={label}>{type === 'organization' ? 'Your name (admin)' : 'Your name'}</label>
@@ -200,8 +181,8 @@ export default function Login() {
             </div>
           )}
 
-          <button type="submit" className="w-full rounded-xl bg-indigo-500 px-4 py-3.5 font-semibold text-white transition hover:bg-indigo-400">
-            {tab === 'signin' ? 'Sign in' : 'Create account'}
+          <button type="submit" disabled={busy} className="w-full rounded-xl bg-indigo-500 px-4 py-3.5 font-semibold text-white transition hover:bg-indigo-400 disabled:opacity-60">
+            {busy ? 'Please wait…' : tab === 'signin' ? 'Sign in' : 'Create account'}
           </button>
         </form>
 
@@ -213,26 +194,26 @@ export default function Login() {
               <span className="text-xs text-slate-500">or</span>
               <span className="h-px flex-1 bg-white/10" />
             </div>
-            {CLIENT_ID && window.google ? (
-              <div id="gsi-button" className="flex justify-center" />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setGoogleOpen(true)}
-                className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-600 bg-white py-3 font-medium text-slate-700 transition hover:bg-slate-100"
-              >
-                <GoogleLogo />
-                Sign up with Google
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={onGoogle}
+              className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-600 bg-white py-3 font-medium text-slate-700 transition hover:bg-slate-100"
+            >
+              <GoogleLogo />
+              Sign up with Google
+            </button>
             <p className="mt-3 text-center text-[11px] text-slate-500">
               Google sign-up creates a Personal account.
             </p>
           </>
         )}
         <p className="mt-5 text-center text-[11px] text-slate-500">
-          By continuing you agree to our <Link to="/privacy" className="underline hover:text-slate-300">Privacy Policy</Link> —
-          all data stays locally in this browser.
+          By continuing you agree to our <Link to="/privacy" className="underline hover:text-slate-300">Privacy Policy</Link>.
+        </p>
+        <p className={`mt-2 text-center text-[11px] font-medium ${isCloud ? 'text-emerald-400' : 'text-amber-400'}`}>
+          {isCloud
+            ? (isGateway ? '● Cloud mode — real accounts, live sync & Razorpay payments' : '● Cloud mode — real accounts & live sync (Razorpay not configured)')
+            : '● Local demo mode — add Supabase keys to go live (see README)'}
         </p>
       </div>
     </div>

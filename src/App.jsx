@@ -15,7 +15,17 @@ import Requests from './components/Requests'
 import QrVault from './components/QrVault'
 
 function RequireAuth({ children }) {
-  const { user } = useStore()
+  const { user, ready } = useStore()
+  if (!ready) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">
+        <div className="text-center">
+          <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+          <p className="text-sm">Loading your workspace…</p>
+        </div>
+      </div>
+    )
+  }
   return user ? children : <Navigate to="/login" replace />
 }
 

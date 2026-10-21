@@ -120,16 +120,35 @@ src/
     └── Settings.jsx         # profile + data controls
 ```
 
-## ⚠️ Note
+## 🟢 Going to production (real money, real accounts)
 
-This is a **demo application** — no real payments are processed. All data is stored **locally in your browser** (localStorage) and is not synced to a server. It's ideal as a UI/UX prototype, a portfolio piece, or a starting point for wiring a real payments backend.
+The app ships **dual-mode**: without any keys it runs as the localStorage demo; add the keys below and every feature becomes genuinely live — real accounts, server data, cross-device realtime, and Razorpay payments.
 
-## 🚢 Deploy on Vercel
+### 1) Supabase — backend, auth & live sync
+
+1. Create a free project → [supabase.com](https://supabase.com)
+2. SQL Editor → paste the contents of [`supabase/schema.sql`](supabase/schema.sql) → **Run**
+3. Project Settings → API → copy values into `.env`:
+   - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (client)
+   - `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (used only by the serverless webhook)
+4. *(Optional)* Authentication → Providers → **Google** → enable with your Google OAuth client (Authorized redirect URI: `https://<ref>.supabase.co/auth/v1/callback`) → "Sign up with Google" becomes a real OAuth flow right away
+5. For production sign-ups, disable "Confirm email" (Auth → Sign In/Up) or implement the confirmation redirect
+
+### 2) Razorpay — real payments
+
+1. Create an account → [razorpay.com](https://razorpay.com) — test with **Test Mode** (free)
+2. Add env vars: `VITE_RAZORPAY_KEY_ID` (client), `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` (server)
+3. Deploy, then in Razorpay Dashboard → **Webhooks** add `https://<your-domain>/api/webhook` with events `payment_link.paid` + `payment.captured`, and put the generated secret in `RAZORPAY_WEBHOOK_SECRET`
+4. Now: clients receive **real Razorpay payment links** (payable by UPI/card/netbanking), the webhook **server-verified-ly** records the payment on your books, and "Pay now" opens **real Razorpay Checkout** for money out
+
+### 3) Deploy with keys
 
 ```bash
-vercel login          # if needed
-vercel --prod         # deploys the app; SPA rewrites come from vercel.json
+vercel env add ...   # or set them in the Vercel dashboard
+vercel --prod
 ```
+
+Server-only keys (`RAZORPAY_KEY_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `RAZORPAY_WEBHOOK_SECRET`) are used exclusively inside `/api/*` serverless functions and are never bundled into client JavaScript.
 
 ---
 
